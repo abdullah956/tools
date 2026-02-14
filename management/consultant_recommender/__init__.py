@@ -1,0 +1,1 @@
+"""Consultant Recommender Django App."""

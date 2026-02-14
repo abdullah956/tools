@@ -1,0 +1,1 @@
+"""Tool scraping app initialization."""

@@ -1,0 +1,49 @@
+# Use Python 3.12 slim image as base
+FROM python:3.12-slim
+
+# Add required labels
+LABEL Name="consultant-recommender-dev" \
+      Version="1.0.0"
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VERSION=2.1.1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1 \
+    ENV_TYPE=.env.development \
+    ENV_FILE_PATH=/app/.env_vars/.env.development \
+    PYTHONPATH="/app:$PYTHONPATH"
+
+# Add Poetry to PATH
+ENV PATH="$POETRY_HOME/bin:$PATH"
+
+# Set working directory
+WORKDIR /app/microservices/consultant_recommender
+
+# Install system dependencies and Poetry
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    curl \
+    && curl -sSL https://install.python-poetry.org | python3 - \
+    && poetry --version \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only dependency files
+COPY microservices/consultant_recommender/pyproject.toml /app/microservices/consultant_recommender/pyproject.toml
+COPY microservices/consultant_recommender/poetry.lock /app/microservices/consultant_recommender/poetry.lock
+
+# Create .env_vars directory and copy environment file
+RUN mkdir -p /app/.env_vars
+
+# Install dependencies
+RUN poetry install --no-interaction --no-ansi
+
+# Expose the port
+EXPOSE 13000
+
+# Command to run the application
+CMD ["poetry", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "13000", "--reload"]

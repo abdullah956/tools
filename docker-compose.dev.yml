@@ -1,0 +1,143 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_HOST=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  management:
+    build:
+      context: .
+      dockerfile: management/Dockerfile
+      target: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./management:/app/management
+      - ./envs:/app/envs
+      - ./.env_vars:/app/.env_vars
+      - ./media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app_network
+    env_file:
+      - ./.env_vars/.env.development
+    restart: unless-stopped
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: management/Dockerfile
+      target: development
+    command: ["celery", "-A", "configurations.celery", "worker", "--loglevel=info", "--concurrency=8"]
+    volumes:
+      - ./management:/app/management
+      - ./envs:/app/envs
+      - ./.env_vars:/app/.env_vars
+      - ./media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      management:
+        condition: service_started
+    networks:
+      - app_network
+    env_file:
+      - ./.env_vars/.env.development
+    restart: unless-stopped
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: management/Dockerfile
+      target: development
+    command: ["celery", "-A", "configurations.celery", "beat", "--loglevel=info"]
+    volumes:
+      - ./management:/app/management
+      - ./envs:/app/envs
+      - ./.env_vars:/app/.env_vars
+      - ./media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      management:
+        condition: service_started
+    networks:
+      - app_network
+    env_file:
+      - ./.env_vars/.env.development
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: .
+      dockerfile: management/Dockerfile
+      target: development
+    command: ["celery", "-A", "configurations.celery", "flower", "--port=5555"]
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./management:/app/management
+      - ./envs:/app/envs
+      - ./.env_vars:/app/.env_vars
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
+    networks:
+      - app_network
+    env_file:
+      - ./.env_vars/.env.development
+    restart: unless-stopped
+
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
